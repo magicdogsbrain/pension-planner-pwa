@@ -1491,14 +1491,7 @@ function runOptimisation(testType) {
   // Use setTimeout to allow UI to update
   setTimeout(function() {
     var bestResult = null;
-    var originalResult = { equity: originalEquity, bond: originalBond, cash: originalCash, rate: originalRate, avgProt: 0, withProt: 0 };
-
-    // Get original protection stats
-    if (testType === 'MC' && window.mcData) {
-      var origProtArr = window.mcData.protArr;
-      originalResult.avgProt = origProtArr.reduce(function(a,b){return a+b;}, 0) / origProtArr.length;
-      originalResult.withProt = origProtArr.filter(function(p){return p > 0;}).length;
-    }
+    var originalResult = { equity: originalEquity, bond: originalBond, cash: originalCash, rate: originalRate, avgProt: 0, withProt: 0, totalRuns: 0 };
 
     // Generate allocation combinations to test
     // We'll test in 5% increments, keeping cash between 5-30% of total
@@ -1519,13 +1512,13 @@ function runOptimisation(testType) {
     var yrs = Object.keys(EQUITY_RETURNS).map(Number).sort(function(a,b){return a-b;});
     var maxY = Math.max.apply(null, yrs);
 
-    // Test each allocation
-    allocations.forEach(function(alloc) {
+    // Helper function to run simulation for an allocation
+    function runSimForAlloc(alloc) {
       var cfg = { equityStart: alloc.equity, bondStart: alloc.bond, cashStart: alloc.cash, years: years };
       var results = [];
 
       if (testType === 'MC') {
-        // Monte Carlo - run 500 iterations for speed (half the normal 1000)
+        // Monte Carlo - run 500 iterations for speed
         for (var i = 0; i < 500; i++) {
           var rng = seededRng(i * 12345), ret = { equity: {}, inflation: {} };
           for (var y = 0; y < years; y++) {
@@ -1554,23 +1547,35 @@ function runOptimisation(testType) {
       var avgProt = protArr.reduce(function(a,b){return a+b;}, 0) / results.length;
       var withProt = results.filter(function(r){return r.protMonths > 0;}).length;
 
-      // Score: prioritise success rate, then minimise protection usage
-      // We want highest success rate with lowest protection
-      var score = rate * 1000 - avgProt - (withProt / results.length * 10);
+      return {
+        equity: alloc.equity,
+        bond: alloc.bond,
+        cash: alloc.cash,
+        rate: rate,
+        avgProt: avgProt,
+        withProt: withProt,
+        totalRuns: results.length
+      };
+    }
 
-      if (!bestResult ||
-          (rate > bestResult.rate) ||
-          (rate === bestResult.rate && avgProt < bestResult.avgProt)) {
-        bestResult = {
-          equity: alloc.equity,
-          bond: alloc.bond,
-          cash: alloc.cash,
-          rate: rate,
-          avgProt: avgProt,
-          withProt: withProt,
-          totalRuns: results.length,
-          score: score
-        };
+    // First, run the original allocation to get its protection stats
+    var origAlloc = { equity: originalEquity, bond: originalBond, cash: originalCash };
+    var origSimResult = runSimForAlloc(origAlloc);
+    originalResult.avgProt = origSimResult.avgProt;
+    originalResult.withProt = origSimResult.withProt;
+    originalResult.totalRuns = origSimResult.totalRuns;
+    originalResult.rate = origSimResult.rate; // Use consistent simulation for comparison
+
+    // Test each allocation - only consider if protection is not worse than original
+    allocations.forEach(function(alloc) {
+      var result = runSimForAlloc(alloc);
+
+      // Only consider this allocation if it doesn't use MORE protection than original
+      if (result.avgProt <= originalResult.avgProt) {
+        // Pick the one with highest success rate (among those with acceptable protection)
+        if (!bestResult || result.rate > bestResult.rate) {
+          bestResult = result;
+        }
       }
     });
 
@@ -1579,7 +1584,7 @@ function runOptimisation(testType) {
     if (bestResult && bestResult.rate > originalResult.rate) {
       h += '<div class="card" style="margin-top:20px;border-color:var(--success);">';
       h += '<h3 style="color:var(--success);margin-top:0;">Better Allocation Found</h3>';
-      h += '<p style="color:var(--text-muted);margin-bottom:16px;">A different fund split could improve your success rate:</p>';
+      h += '<p style="color:var(--text-muted);margin-bottom:16px;">A different fund split could improve your success rate without increasing protection usage:</p>';
 
       h += '<div class="grid grid-2" style="gap:20px;margin-bottom:20px;">';
 
@@ -1591,6 +1596,7 @@ function runOptimisation(testType) {
       h += '<div style="font-size:13px;">Equity: £' + originalResult.equity.toLocaleString() + ' (' + Math.round(originalResult.equity/totalFunds*100) + '%)</div>';
       h += '<div style="font-size:13px;">Bonds: £' + originalResult.bond.toLocaleString() + ' (' + Math.round(originalResult.bond/totalFunds*100) + '%)</div>';
       h += '<div style="font-size:13px;">Cash: £' + originalResult.cash.toLocaleString() + ' (' + Math.round(originalResult.cash/totalFunds*100) + '%)</div>';
+      h += '<div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Avg protection: ' + originalResult.avgProt.toFixed(0) + ' months</div>';
       h += '</div>';
 
       // Optimised
@@ -1601,14 +1607,9 @@ function runOptimisation(testType) {
       h += '<div style="font-size:13px;">Equity: £' + bestResult.equity.toLocaleString() + ' (' + Math.round(bestResult.equity/totalFunds*100) + '%)</div>';
       h += '<div style="font-size:13px;">Bonds: £' + bestResult.bond.toLocaleString() + ' (' + Math.round(bestResult.bond/totalFunds*100) + '%)</div>';
       h += '<div style="font-size:13px;">Cash: £' + bestResult.cash.toLocaleString() + ' (' + Math.round(bestResult.cash/totalFunds*100) + '%)</div>';
+      h += '<div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Avg protection: ' + bestResult.avgProt.toFixed(0) + ' months (same or less)</div>';
       h += '</div>';
 
-      h += '</div>';
-
-      // Protection comparison
-      h += '<div class="grid grid-2" style="gap:12px;margin-bottom:16px;">';
-      h += '<div class="stat-box"><div class="stat-value">' + bestResult.avgProt.toFixed(0) + '</div><div class="stat-label">Avg Protection Months</div></div>';
-      h += '<div class="stat-box"><div class="stat-value">' + Math.round(bestResult.withProt / bestResult.totalRuns * 100) + '%</div><div class="stat-label">Runs Needing Protection</div></div>';
       h += '</div>';
 
       h += '<div class="info-box">';
@@ -1618,10 +1619,8 @@ function runOptimisation(testType) {
     } else {
       h += '<div class="card" style="margin-top:20px;border-color:var(--primary);">';
       h += '<h3 style="color:var(--primary);margin-top:0;">Your Allocation is Already Optimal</h3>';
-      h += '<p style="color:var(--text-muted);">We tested ' + allocations.length + ' different fund splits. Your current allocation achieves the best (or equal best) success rate of ' + originalResult.rate.toFixed(1) + '%.</p>';
-      if (bestResult) {
-        h += '<p style="font-size:13px;color:var(--text-muted);">Best alternative found: ' + bestResult.rate.toFixed(1) + '% success with £' + bestResult.equity.toLocaleString() + ' equity / £' + bestResult.bond.toLocaleString() + ' bonds / £' + bestResult.cash.toLocaleString() + ' cash</p>';
-      }
+      h += '<p style="color:var(--text-muted);">We tested ' + allocations.length + ' different fund splits. Your current allocation achieves the best success rate (' + originalResult.rate.toFixed(1) + '%) without increasing protection usage.</p>';
+      h += '<p style="font-size:13px;color:var(--text-muted);">Your protection: ' + originalResult.avgProt.toFixed(0) + ' months average</p>';
       h += '</div>';
     }
 
