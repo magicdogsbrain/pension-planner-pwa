@@ -386,8 +386,8 @@
           <div>
             <label>Tax Threshold Mode</label>
             <select id="ssTaxMode">
-              <option value="inflates">Inflates with CPI</option>
-              <option value="frozen">Frozen</option>
+              <option value="inflates">Standard (rise with inflation)</option>
+              <option value="frozen">Frozen (stay at current levels)</option>
             </select>
           </div>
         </div>
@@ -396,7 +396,7 @@
           SIPP Draw = Target Income - Other Pensions - State Pension<br>
           (But never more than the Basic Rate Limit, to avoid 40% tax)<br><br>
           <strong>Frozen:</strong> Tax thresholds stay the same each year - you pay more tax over time as inflation rises.<br>
-          <strong>Inflates:</strong> Tax thresholds rise with inflation - your spending power stays the same.
+          <strong>Standard:</strong> Tax thresholds rise with inflation - your spending power stays the same.
         </div>
         
         <h3>Other Pensions (Year 0)</h3>
@@ -3566,6 +3566,47 @@ function setWizardDone(type) {
   localStorage.setItem(WIZARD_KEY, JSON.stringify(status));
 }
 
+// ========== INTRO WIZARD ==========
+function showIntroWizard() {
+  document.getElementById('introWizardOverlay').classList.remove('hidden');
+  showIntroWizardStep(1);
+}
+
+function hideIntroWizard() {
+  document.getElementById('introWizardOverlay').classList.add('hidden');
+}
+
+function showIntroWizardStep(step) {
+  var totalSteps = 2;
+  for (var i = 1; i <= totalSteps; i++) {
+    var el = document.getElementById('introWizardStep' + i);
+    if (el) el.classList.add('hidden');
+    var dot = document.getElementById('introWizardDot' + i);
+    if (dot) {
+      dot.classList.remove('active', 'done');
+      if (i < step) dot.classList.add('done');
+      if (i === step) dot.classList.add('active');
+    }
+  }
+  var current = document.getElementById('introWizardStep' + step);
+  if (current) current.classList.remove('hidden');
+}
+
+function finishIntroWizard() {
+  setWizardDone('intro');
+  hideIntroWizard();
+  // Now show stress wizard
+  showStressWizard();
+}
+
+function skipAllWizards() {
+  setWizardDone('intro');
+  setWizardDone('stress');
+  setWizardDone('decision');
+  hideIntroWizard();
+}
+
+// ========== STRESS TESTER WIZARD ==========
 function showStressWizard() {
   document.getElementById('stressWizardOverlay').classList.remove('hidden');
   showStressWizardStep(1);
@@ -3606,8 +3647,18 @@ function finishStressWizard() {
   saveStressSettings();
   setWizardDone('stress');
   hideStressWizard();
+  // Now show decision wizard
+  showDecisionWizard();
 }
 
+function skipStressWizard() {
+  setWizardDone('stress');
+  hideStressWizard();
+  // Still show decision wizard
+  showDecisionWizard();
+}
+
+// ========== DECISION TOOL WIZARD ==========
 function showDecisionWizard() {
   document.getElementById('decisionWizardOverlay').classList.remove('hidden');
   showDecisionWizardStep(1);
@@ -3646,30 +3697,105 @@ function finishDecisionWizard() {
   hideDecisionWizard();
 }
 
-// Auto-show wizard on first visit to settings
+function skipDecisionWizard() {
+  setWizardDone('decision');
+  hideDecisionWizard();
+}
+
+// Auto-show intro wizard on first visit
+function checkAndShowIntroWizard() {
+  var status = getWizardStatus();
+  if (!status.intro) {
+    showIntroWizard();
+  }
+}
+
+// Hook into app initialization - show intro wizard when app loads for first time
 var origLoadStressSettings = loadStressSettings;
 loadStressSettings = function() {
   origLoadStressSettings();
-  var status = getWizardStatus();
-  if (!status.stress) {
-    showStressWizard();
-  }
 };
 
 var origLoadDecisionSettings = loadDecisionSettings;
 loadDecisionSettings = function() {
   origLoadDecisionSettings();
-  var status = getWizardStatus();
-  if (!status.decision) {
-    showDecisionWizard();
-  }
 };
+
+// Show intro wizard on page load if not done
+window.addEventListener('DOMContentLoaded', function() {
+  // Small delay to let page render first
+  setTimeout(checkAndShowIntroWizard, 500);
+});
 </script>
+
+<!-- Introduction Wizard -->
+<div id="introWizardOverlay" class="wizard-overlay hidden">
+  <div class="wizard-box">
+    <div class="wizard-title">Welcome to Pension Planner</div>
+    <div class="wizard-subtitle">A tool to help you plan and manage your SIPP pension drawdown</div>
+    <div class="wizard-progress">
+      <div id="introWizardDot1" class="wizard-dot active"></div>
+      <div id="introWizardDot2" class="wizard-dot"></div>
+    </div>
+
+    <!-- Intro Step 1: What is this app? -->
+    <div id="introWizardStep1" class="wizard-step">
+      <div class="wizard-step-title">What does this app do?</div>
+      <div class="wizard-step-desc" style="line-height: 1.7;">
+        This app helps you answer two important questions about your pension:
+      </div>
+      <div style="margin: 20px 0; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+        <div style="margin-bottom: 16px;">
+          <strong style="color: var(--primary);">1. Stress Tester</strong>
+          <p style="margin: 8px 0 0 0; color: var(--text-muted); font-size: 14px; line-height: 1.6;">
+            "Can I afford to retire?" This tool runs 1,000 simulations using real historical market data to show you the range of possible outcomes for your pension. It helps you set realistic goals before you retire.
+          </p>
+        </div>
+        <div>
+          <strong style="color: var(--success);">2. Decision Tool</strong>
+          <p style="margin: 8px 0 0 0; color: var(--text-muted); font-size: 14px; line-height: 1.6;">
+            "Where should I take money from this month?" Once you're retired, this tool helps you decide each month which fund to withdraw from to maximise tax efficiency.
+          </p>
+        </div>
+      </div>
+      <div class="wizard-buttons">
+        <button class="secondary" onclick="skipAllWizards()">Skip Setup</button>
+        <button onclick="showIntroWizardStep(2)">Next</button>
+      </div>
+    </div>
+
+    <!-- Intro Step 2: Start with Stress Tester -->
+    <div id="introWizardStep2" class="wizard-step hidden">
+      <div class="wizard-step-title">Start with the Stress Tester</div>
+      <div class="wizard-step-desc" style="line-height: 1.7;">
+        Whether you're already retired or still planning, the Stress Tester is where you should start.
+      </div>
+      <div style="margin: 20px 0; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+        <p style="margin: 0 0 12px 0; color: var(--text); font-size: 14px; line-height: 1.6;">
+          The Stress Tester will help you understand:
+        </p>
+        <ul style="margin: 0; padding-left: 20px; color: var(--text-muted); font-size: 14px; line-height: 1.8;">
+          <li>How much yearly income your pension could realistically provide</li>
+          <li>How long your money might last under different market conditions</li>
+          <li>What happens if markets crash early in your retirement</li>
+          <li>Whether your current savings are on track</li>
+        </ul>
+      </div>
+      <div class="wizard-example">
+        <strong>Next:</strong> We'll set up your Stress Tester with some basic questions about your pension.
+      </div>
+      <div class="wizard-buttons">
+        <button class="secondary" onclick="showIntroWizardStep(1)">Back</button>
+        <button onclick="finishIntroWizard()">Set Up Stress Tester</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Stress Tester Setup Wizard -->
 <div id="stressWizardOverlay" class="wizard-overlay hidden">
   <div class="wizard-box">
-    <div class="wizard-title">Welcome to Stress Tester Setup</div>
+    <div class="wizard-title">Stress Tester Setup</div>
     <div class="wizard-subtitle">Let's set up your pension simulation in a few simple steps.</div>
     <div class="wizard-progress">
       <div id="stressWizardDot1" class="wizard-dot active"></div>
@@ -3695,8 +3821,8 @@ loadDecisionSettings = function() {
         <strong>Example:</strong> If you want £2,500 per month, enter £30,000 here.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="hideStressWizard()">Skip Setup</button>
-        <button onclick="showStressWizardStep(2)">Next →</button>
+        <button class="secondary" onclick="skipStressWizard()">Skip</button>
+        <button onclick="showStressWizardStep(2)">Next</button>
       </div>
     </div>
 
@@ -3715,8 +3841,8 @@ loadDecisionSettings = function() {
         <strong>Example:</strong> If you have a company pension paying £5,000/year, enter £5,000.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showStressWizardStep(1)">← Back</button>
-        <button onclick="showStressWizardStep(3)">Next →</button>
+        <button class="secondary" onclick="showStressWizardStep(1)">Back</button>
+        <button onclick="showStressWizardStep(3)">Next</button>
       </div>
     </div>
 
@@ -3740,8 +3866,8 @@ loadDecisionSettings = function() {
         <strong>Example:</strong> If you're retiring at 55 and get State Pension at 67, enter year 12.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showStressWizardStep(2)">← Back</button>
-        <button onclick="showStressWizardStep(4)">Next →</button>
+        <button class="secondary" onclick="showStressWizardStep(2)">Back</button>
+        <button onclick="showStressWizardStep(4)">Next</button>
       </div>
     </div>
 
@@ -3769,8 +3895,8 @@ loadDecisionSettings = function() {
         <strong>Tip:</strong> These are target minimums. The simulation draws from stocks/bonds first and keeps cash as an emergency buffer.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showStressWizardStep(3)">← Back</button>
-        <button onclick="showStressWizardStep(5)">Next →</button>
+        <button class="secondary" onclick="showStressWizardStep(3)">Back</button>
+        <button onclick="showStressWizardStep(5)">Next</button>
       </div>
     </div>
 
@@ -3788,8 +3914,8 @@ loadDecisionSettings = function() {
         <strong>Example:</strong> If you're 55 and want money until age 90, enter 35 years.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showStressWizardStep(4)">← Back</button>
-        <button onclick="showStressWizardStep(6)">Next →</button>
+        <button class="secondary" onclick="showStressWizardStep(4)">Back</button>
+        <button onclick="showStressWizardStep(6)">Next</button>
       </div>
     </div>
 
@@ -3801,16 +3927,16 @@ loadDecisionSettings = function() {
       </div>
       <div class="wizard-input">
         <select id="wizTaxMode">
-          <option value="inflates">Rise with inflation (optimistic)</option>
-          <option value="frozen">Stay frozen (pessimistic)</option>
+          <option value="inflates">Standard (rise with inflation)</option>
+          <option value="frozen">Frozen (stay at current levels)</option>
         </select>
       </div>
       <div class="wizard-example">
-        <strong>Tip:</strong> If unsure, "Rise with inflation" is a reasonable middle-ground assumption.
+        <strong>Tip:</strong> "Standard" assumes thresholds rise with inflation. "Frozen" means you'll pay more tax over time as your income grows but thresholds don't.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showStressWizardStep(5)">← Back</button>
-        <button onclick="finishStressWizard()">Finish Setup ✓</button>
+        <button class="secondary" onclick="showStressWizardStep(5)">Back</button>
+        <button onclick="finishStressWizard()">Continue to Decision Tool</button>
       </div>
     </div>
   </div>
@@ -3819,8 +3945,8 @@ loadDecisionSettings = function() {
 <!-- Decision Tool Setup Wizard -->
 <div id="decisionWizardOverlay" class="wizard-overlay hidden">
   <div class="wizard-box">
-    <div class="wizard-title">Welcome to Decision Tool Setup</div>
-    <div class="wizard-subtitle">Let's configure your monthly drawdown tracking.</div>
+    <div class="wizard-title">Decision Tool Setup</div>
+    <div class="wizard-subtitle">Now let's set up the tool you'll use each month once you're retired.</div>
     <div class="wizard-progress">
       <div id="decisionWizardDot1" class="wizard-dot active"></div>
       <div id="decisionWizardDot2" class="wizard-dot"></div>
@@ -3843,8 +3969,8 @@ loadDecisionSettings = function() {
         <strong>Example:</strong> If you want about £2,000 per month after tax, you might need £30,000 gross.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="hideDecisionWizard()">Skip Setup</button>
-        <button onclick="showDecisionWizardStep(2)">Next →</button>
+        <button class="secondary" onclick="skipDecisionWizard()">Skip</button>
+        <button onclick="showDecisionWizardStep(2)">Next</button>
       </div>
     </div>
 
@@ -3872,8 +3998,8 @@ loadDecisionSettings = function() {
         <strong>Protection Mode:</strong> If your growth funds drop below these minimums, the tool recommends drawing from cash instead.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showDecisionWizardStep(1)">← Back</button>
-        <button onclick="showDecisionWizardStep(3)">Next →</button>
+        <button class="secondary" onclick="showDecisionWizardStep(1)">Back</button>
+        <button onclick="showDecisionWizardStep(3)">Next</button>
       </div>
     </div>
 
@@ -3891,8 +4017,8 @@ loadDecisionSettings = function() {
         <strong>Example:</strong> If you're 55 and planning to age 90, enter 35 years.
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showDecisionWizardStep(2)">← Back</button>
-        <button onclick="showDecisionWizardStep(4)">Next →</button>
+        <button class="secondary" onclick="showDecisionWizardStep(2)">Back</button>
+        <button onclick="showDecisionWizardStep(4)">Next</button>
       </div>
     </div>
 
@@ -3912,8 +4038,8 @@ loadDecisionSettings = function() {
         <strong>Next Step:</strong> Go to "Tax Years" to set up your personal tax details (allowance, other income, state pension dates).
       </div>
       <div class="wizard-buttons">
-        <button class="secondary" onclick="showDecisionWizardStep(3)">← Back</button>
-        <button onclick="finishDecisionWizard()">Finish Setup ✓</button>
+        <button class="secondary" onclick="showDecisionWizardStep(3)">Back</button>
+        <button onclick="finishDecisionWizard()">Finish Setup</button>
       </div>
     </div>
   </div>
